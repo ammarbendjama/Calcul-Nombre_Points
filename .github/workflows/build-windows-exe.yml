@@ -1,9 +1,12 @@
-name: Build Windows EXE
+name: Build Windows EXE et publication
 
 on:
   push:
     branches: ["**"]
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -18,8 +21,7 @@ jobs:
       - name: Installer les dépendances
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt pytest
-          python -m pip install pyinstaller
+          python -m pip install -r requirements.txt pytest pyinstaller
 
       - name: Lancer les tests
         run: python -m pytest tests/ -q
@@ -29,11 +31,19 @@ jobs:
 
       - name: Préparer l'archive
         shell: pwsh
-        run: |
-          Compress-Archive -Path dist/NombrePoints.exe -DestinationPath NombrePoints-Windows.zip
+        run: Compress-Archive -Path dist/NombrePoints.exe -DestinationPath NombrePoints-Windows.zip
 
-      - name: Publier l'artefact
+      - name: Joindre l'archive au run (artefact)
         uses: actions/upload-artifact@v4
         with:
           name: NombrePoints-Windows
           path: NombrePoints-Windows.zip
+
+      - name: Publier dans Releases (lien permanent)
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: NombrePoints — dernière version
+          files: NombrePoints-Windows.zip
+          make_latest: true
