@@ -25,7 +25,7 @@ jobs:
         run: python -m pytest tests/ -q
 
       - name: Compiler l'exécutable
-        run: python -m pyinstaller windows/NombrePoints.spec --distpath dist --workpath build
+        run: python -m PyInstaller windows/NombrePoints.spec --distpath dist --workpath build
 
       - name: Préparer l'archive
         shell: pwsh
