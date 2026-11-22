@@ -22,7 +22,7 @@ def trouver_zones_notes(image, aire_min: float = 0.0002, aire_max: float = 0.05)
 
     _, binaire = cv2.threshold(gris, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
 
-    noyau = cv2.getStructuringElement(cv2.MORPH_RECT, (max(3, largeur // 250), 3))
+    noyau = cv2.getStructuringElement(cv2.MORPH_RECT, (max(3, largeur // 200), 5))
     joint = cv2.morphologyEx(binaire, cv2.MORPH_CLOSE, noyau)
 
     contours, _ = cv2.findContours(joint, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -40,8 +40,50 @@ def trouver_zones_notes(image, aire_min: float = 0.0002, aire_max: float = 0.05)
             continue
         zones.append((x, y, l, h))
 
-    zones.sort(key=lambda z: (z[1], z[0]))
-    return zones
+    return _fusionner(zones, largeur)
+
+
+def _fusionner(zones: list[tuple[int, int, int, int]], largeur: int) -> list[tuple[int, int, int, int]]:
+    """Réunit les zones d'une même ligne de texte (ex. "1,5" "/" "2")."""
+    ecart_max = max(12, int(largeur * 0.25))
+    fusionFaite = True
+    while fusionFaite:
+        fusionFaite = False
+        restantes = zones
+        zones = []
+        while restantes:
+            x, y, l, h = restantes.pop()
+            for i, (x2, y2, l2, h2) in enumerate(zones):
+                chevauch = max(0, min(y + h, y2 + h2) - max(y, y2))
+                if chevauch < 0.4 * min(h, h2):
+                    continue
+                ecart = max(x - (x2 + l2), x2 - (x + l))
+                if ecart > ecart_max:
+                    continue
+                nx, ny = min(x, x2), min(y, y2)
+                xl, yb = max(x + l, x2 + l2), max(y + h, y2 + h2)
+                zones[i] = (nx, ny, xl - nx, yb - ny)
+                fusionFaite = True
+                break
+            else:
+                zones.append((x, y, l, h))
+    return sorted(zones, key=lambda z: (z[1], z[0]))
+
+
+def preparer_ocr(image, zone: tuple[int, int, int, int], marge_px: int = 8):
+    """Découpe une zone et la normalise pour l'OCR :
+    grossissement x3, encre noire sur fond blanc, marge blanche autour.
+    """
+    morceau = rogner(image, zone, marge_px=marge_px)
+    if morceau is None or morceau.size == 0:
+        return None
+    gris = cv2.cvtColor(morceau, cv2.COLOR_BGR2GRAY)
+    if gris.mean() < 110:
+        gris = cv2.normalize(gris, None, 0, 255, cv2.NORM_MINMAX)
+    _, encre = cv2.threshold(gris, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    propre = np.where(encre > 0, 0, 255).astype(np.uint8)
+    propre = cv2.resize(propre, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
+    return cv2.copyMakeBorder(propre, 20, 20, 20, 20, cv2.BORDER_CONSTANT, value=255)
 
 
 def rogner(image, zone: tuple[int, int, int, int], marge_px: int = 8):

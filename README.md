@@ -6,7 +6,7 @@ copies devant la caméra).
 
 | Version | Dossier | Guide |
 |---|---|---|
-| **Windows** (script + `.exe` construit par GitHub Actions) | [`windows/`](windows/) | [windows/INSTALL.md](windows/INSTALL.md) |
+| **Windows** (interface graphique, `.exe` tout-en-un OCR intégré, construit par GitHub Actions) | [`windows/`](windows/) | [windows/INSTALL.md](windows/INSTALL.md) |
 | **Android & iOS** (application web installable, OCR dans le navigateur) | [`mobile/`](mobile/) | [mobile/INSTALL.md](mobile/INSTALL.md) |
 
 ## Fonctionnement

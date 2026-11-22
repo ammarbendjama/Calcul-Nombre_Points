@@ -9,7 +9,7 @@ from pathlib import Path
 import cv2
 
 from .aggregate import Copie, Zone, exporter_csv, exporter_json
-from .detector import rogner, trouver_zones_notes
+from .detector import preparer_ocr, trouver_zones_notes
 from .extractor import grouper_copies, iterer_pages
 from .ocr import lire_note
 
@@ -51,7 +51,7 @@ def analyser_video(args: argparse.Namespace) -> list[Copie]:
             annotation = image.copy()
             notes_page = 0
             for zone_box in trouver_zones_notes(image):
-                morceau = rogner(image, zone_box, marge_px=args.marge)
+                morceau = preparer_ocr(image, zone_box, marge_px=args.marge)
                 try:
                     note = lire_note(morceau, accepter_entiers=args.accepter_entiers, moteur=args.moteur)
                 except RuntimeError as erreur:
@@ -101,7 +101,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("video", help="chemin de la vidéo (mp4, avi, mov...)")
     parser.add_argument("-o", "--sortie", default="resultats", help="dossier des résultats")
-    parser.add_argument("--moteur", choices=["pytesseract", "easyocr"], default="pytesseract")
+    parser.add_argument("--moteur", choices=["pytesseract", "easyocr", "rapidocr"], default="pytesseract")
     parser.add_argument("--pas-echantillon", type=int, default=5, help="1 image analysée tous les N (défaut 5)")
     parser.add_argument("--seuil-similarite", type=float, default=0.97, help="similarité min pour rester même page")
     parser.add_argument("--pages-par-copie", type=int, default=0, help="forcer N pages par copie (0 = auto)")

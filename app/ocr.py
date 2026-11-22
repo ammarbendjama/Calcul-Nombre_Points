@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from .recognizer import NoteLue, analyser_note
 
-_CONFIG_TESSERACT = "--psm 7 --oem 3 -c tessedit_char_whitelist=0123456789,./"
+_CONFIG_TESSERACT = "--psm 7 --oem 3 -c tessedit_char_whitelist=0123456789,."
+_OCR_RAPIDE = None
 
 
 def ocr_zone(image, moteur: str = "pytesseract") -> str | None:
@@ -30,6 +31,20 @@ def ocr_zone(image, moteur: str = "pytesseract") -> str | None:
                 "tesseract-ocr) ou utilisez --moteur easyocr."
             ) from exc
         return texte.strip() or None
+    if moteur == "rapidocr":
+        try:
+            from rapidocr_onnxruntime import RapidOCR
+        except ImportError as exc:  # pragma: no cover - dépend de l'installation
+            raise RuntimeError(
+                "rapidocr n'est pas installé : lancez `pip install rapidocr-onnxruntime`."
+            ) from exc
+        global _OCR_RAPIDE
+        if _OCR_RAPIDE is None:
+            _OCR_RAPIDE = RapidOCR()
+        resultats, _temps = _OCR_RAPIDE(image)
+        if not resultats:
+            return None
+        return " ".join(str(r[1]) for r in resultats).strip() or None
     if moteur == "easyocr":
         try:
             import easyocr
