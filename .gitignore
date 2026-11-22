@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.venv/
+resultats/
+demo.mp4
+*.avi
+*.mov
