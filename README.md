@@ -4,6 +4,11 @@ Application qui calcule automatiquement le **nombre de points de chaque copie
 double d'examen** à partir d'une **vidéo** (film du correcteur passant les
 copies devant la caméra).
 
+| Version | Dossier | Guide |
+|---|---|---|
+| **Windows** (script + `.exe` construit par GitHub Actions) | [`windows/`](windows/) | [windows/INSTALL.md](windows/INSTALL.md) |
+| **Android & iOS** (application web installable, OCR dans le navigateur) | [`mobile/`](mobile/) | [mobile/INSTALL.md](mobile/INSTALL.md) |
+
 ## Fonctionnement
 
 1. **Extraction** : la vidéo est analysée image par image ; la même page

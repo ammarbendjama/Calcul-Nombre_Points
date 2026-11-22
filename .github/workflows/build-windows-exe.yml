@@ -1,0 +1,39 @@
+name: Build Windows EXE
+
+on:
+  push:
+    branches: ["**"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installer les dépendances
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install pyinstaller
+
+      - name: Lancer les tests
+        run: python -m pytest tests/ -q
+
+      - name: Compiler l'exécutable
+        run: python -m pyinstaller windows/NombrePoints.spec --distpath dist --workpath build
+
+      - name: Préparer l'archive
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist/NombrePoints.exe -DestinationPath NombrePoints-Windows.zip
+
+      - name: Publier l'artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NombrePoints-Windows
+          path: NombrePoints-Windows.zip
