@@ -1,12 +1,4 @@
-"""Extraction des pages (images uniques) à partir d'une vidéo ou de la caméra.
-
-Principes communs à la vidéo et à la caméra en direct :
-  - une image sur `pas_echantillon` est examinée ;
-  - une page sombre (l'examinateur écarte la copie) marque le début d'une
-    NOUVELLE copie pour la prochaine page ;
-  - une transition moyenne (page tournée) marque une nouvelle page ;
-  - une page claire n'est gardée que si elle diffère de la précédente.
-"""
+"""Détection de pages uniques (vidéo ou caméra directe)."""
 
 from __future__ import annotations
 
@@ -30,50 +22,83 @@ def similarite(a, b) -> float:
     return 1.0 - fraction
 
 
+class DetecteurPages:
+    """Machine à états : décide quand une image est une page nouvelle/copie nouvelle.
+
+    - image sombre (copie écartée) -> la prochaine page démarre une NOUVELLE copie ;
+    - transition moyenne (page tournée) -> nouvelle page, même copie ;
+    - page claire : gardée si différente de la précédente (hystérésis 2 échantillons).
+    """
+
+    def __init__(self, pas_echantillon: int = 3, seuil_similarite: float = 0.97,
+                 seuil_sombre: int = 60, seuil_clair: int = 150):
+        self.pas = max(1, pas_echantillon)
+        self.seuil_similarite = seuil_similarite
+        self.seuil_sombre = seuil_sombre
+        self.seuil_clair = seuil_clair
+        self.precedent: np.ndarray | None = None
+        self.sombre_vu = False
+        self.page_tournee = False
+        self.sous_seuil = 0
+        self._index = 0
+
+    def traiter(self, image) -> tuple[str, bool] | None:
+        """Retourne ("page", nouvelle_copie) si une page est capturée, sinon None."""
+        self._index += 1
+        if (self._index - 1) % self.pas != 0:
+            return None
+
+        luminosite = float(image.mean())
+        if luminosite < self.seuil_sombre:
+            self.sombre_vu = True
+            return None
+        if luminosite < self.seuil_clair:
+            self.page_tournee = True
+            return None
+
+        petit = apercu(image)
+        if self.precedent is None or self.page_tournee or self.sombre_vu:
+            nouvel_evenement = ("page", self.sombre_vu)
+        elif similarite(self.precedent, petit) < self.seuil_similarite:
+            self.sous_seuil += 1
+            if self.sous_seuil >= 2:
+                self.sous_seuil = 0
+                nouvel_evenement = ("page", False)
+            else:
+                self.precedent = petit
+                self.page_tournee = False
+                self.sombre_vu = False
+                return None
+        else:
+            self.sous_seuil = 0
+            self.precedent = petit
+            self.page_tournee = False
+            self.sombre_vu = False
+            return None
+
+        self.precedent = petit
+        self.page_tournee = False
+        self.sombre_vu = False
+        return nouvel_evenement
+
+
 def extraire_pages(obtenir_image, pas_echantillon: int, seuil_similarite: float,
                    seuil_sombre: int, seuil_clair: int, sur_frame=None):
-    """Génère (image, nouvelle_copie) pour chaque page unique.
-
-    `obtenir_image()` doit retourner l'image suivante ou None si plus rien.
-    `sur_frame(image)` est appelé pour chaque image reçue (aperçu en direct).
-    """
-    precedent: np.ndarray | None = None
-    sombre_vu = False
-    page_tournee = False
-    sous_seuil = 0
-    index = 0
+    """Génère (image, nouvelle_copie) pour chaque page unique d'un flux d'images."""
+    detecteur = DetecteurPages(pas_echantillon, seuil_similarite, seuil_sombre, seuil_clair)
     while True:
         image = obtenir_image()
         if image is None:
             return
         if sur_frame is not None:
             sur_frame(image)
-        if index % max(1, pas_echantillon) == 0:
-            luminosite = float(image.mean())
-            if luminosite < seuil_sombre:
-                sombre_vu = True
-            elif luminosite < seuil_clair:
-                page_tournee = True
-            else:
-                petit = apercu(image)
-                if precedent is None or page_tournee or sombre_vu:
-                    yield image, sombre_vu
-                    sous_seuil = 0
-                elif similarite(precedent, petit) < seuil_similarite:
-                    sous_seuil += 1
-                    if sous_seuil >= 2:
-                        yield image, False
-                        sous_seuil = 0
-                else:
-                    sous_seuil = 0
-                precedent = petit
-                sombre_vu = False
-                page_tournee = False
-        index += 1
+        evenement = detecteur.traiter(image)
+        if evenement is not None:
+            yield image, evenement[1]
 
 
 def iterer_pages(video_path, pas_echantillon: int = 5, seuil_similarite: float = 0.97,
-                 seuil_sombre: int = 80, seuil_clair: int = 210):
+                 seuil_sombre: int = 60, seuil_clair: int = 150):
     """Génère (index_image, image, nouvelle_copie) pour une vidéo."""
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
@@ -94,36 +119,8 @@ def iterer_pages(video_path, pas_echantillon: int = 5, seuil_similarite: float =
         cap.release()
 
 
-def iterer_pages_camera(source=0, pas_echantillon: int = 3, seuil_similarite: float = 0.97,
-                        seuil_sombre: int = 80, seuil_clair: int = 210, stop_event=None,
-                        sur_frame=None):
-    """Génère (image, nouvelle_copie) depuis la caméra (source 0 = caméra par défaut).
-
-    `sur_frame(image)` est appelé pour chaque image (aperçu en direct).
-    Analyse arrêtée proprement quand `stop_event` est activé.
-    Retourne (capture, générateur) : fermer `capture` après usage.
-    """
-    cap = cv2.VideoCapture(source)
-    if not cap.isOpened():
-        raise RuntimeError("Impossible d'accéder à la caméra.")
-
-    def suivant():
-        if stop_event is not None and stop_event.is_set():
-            return None
-        ok, image = cap.read()
-        return image if ok else None
-
-    return cap, extraire_pages(
-        suivant, pas_echantillon, seuil_similarite, seuil_sombre, seuil_clair,
-        sur_frame=sur_frame,
-    )
-
-
 def grouper_copies(flags: list[bool]) -> list[list[int]]:
-    """Regroupe les index de pages en copies à partir des drapeaux.
-
-    `flags[i]` vaut True si la page i commence une nouvelle copie.
-    """
+    """Regroupe les index de pages en copies ; flags[i] = la page i commence une copie."""
     if not flags:
         return []
     copies: list[list[int]] = [[0]]

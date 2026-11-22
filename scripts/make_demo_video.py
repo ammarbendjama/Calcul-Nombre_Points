@@ -71,7 +71,7 @@ def main() -> int:
             # transition sombre (nouvelle copie) ou moyenne (page suivante)
             separation_copie = info["page"] == 1 and precedente != info["copie"]
             ecrire_transition(sortie, 2 if separation_copie else 1, args.fps,
-                              50 if separation_copie else 150)
+                              50 if separation_copie else 120)
         ecrire_page(sortie, page_image(info), 3, args.fps)
         precedente = info["copie"]
 

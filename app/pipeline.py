@@ -11,21 +11,46 @@ import cv2
 from .aggregate import Copie, Zone, exporter_csv, exporter_json
 from .detector import preparer_ocr, trouver_zones_notes
 from .extractor import grouper_copies, iterer_pages
-from .ocr import lire_note, ocr_zone
-from .recognizer import notes_du_texte
+from .ocr import ocr_zone
+from .recognizer import analyser_note, notes_du_texte
+
+
+def analyser_note_puis(texte: str | None, accepter_entiers: bool):
+    return analyser_note(texte or "", accepter_entiers=accepter_entiers)
 
 
 class SessionOcr:
-    """Session d'analyse : gère le moteur OCR et n'avertit qu'une seule fois."""
+    """Session d'analyse : moteur OCR demandé, avec repli automatique sur les
+    autres moteurs disponibles (utile quand l'engine intégré ne se charge pas)."""
+
+    SECU_FS = ("rapidocr", "pytesseract", "easyocr")
 
     def __init__(self, moteur: str):
-        self.moteur = moteur
+        self.moteurs: list[str] = [moteur] + [m for m in self.SECU_FS if m != moteur]
         self.avertie = False
+        self.actif: str | None = None
+
+    def _ocr_texte(self, morceau) -> str | None:
+        derniere = None
+        for moteur in list(self.moteurs):
+            try:
+                texte = ocr_zone(morceau, moteur=moteur)
+            except RuntimeError as erreur:
+                derniere = erreur
+                continue
+            if self.moteurs[0] != moteur:
+                self.moteurs.remove(moteur)
+                self.moteurs.insert(0, moteur)
+                print(f"[OCR] moteur actif : {moteur}", flush=True)
+            self.actif = moteur
+            return texte
+        raise derniere
 
     def lire(self, image, zone_box, marge: int, confiance_min: float, accepter_entiers: bool):
         try:
             morceau = preparer_ocr(image, zone_box, marge_px=marge)
-            note = lire_note(morceau, accepter_entiers=accepter_entiers, moteur=self.moteur)
+            texte = self._ocr_texte(morceau)
+            note = analyser_note_puis(texte, accepter_entiers)
         except RuntimeError as erreur:
             if not self.avertie:
                 print(f"ATTENTION : {erreur}", file=sys.stderr)
@@ -64,7 +89,7 @@ def analyser_page(image, session: SessionOcr, marge: int, confiance_min: float,
 
     if not resultat:
         page_complete = preparer_ocr(image, None, marge_px=0)
-        texte = ocr_zone(page_complete, moteur=session.moteur) if page_complete is not None else None
+        texte = session._ocr_texte(page_complete) if page_complete is not None else None
         for note in notes_du_texte(texte or ""):
             if note.confiance >= confiance_min * 0.8:
                 resultat.append((None, note))

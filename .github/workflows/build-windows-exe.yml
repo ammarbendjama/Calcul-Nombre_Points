@@ -29,6 +29,9 @@ jobs:
       - name: Compiler l'exécutable
         run: python -m PyInstaller windows/NombrePoints.spec --distpath dist --workpath build
 
+      - name: Auto-test de l'OCR dans l'exécutable
+        run: dist\NombrePoints.exe --test-ocr
+
       - name: Préparer l'archive
         shell: pwsh
         run: Compress-Archive -Path dist/NombrePoints.exe -DestinationPath NombrePoints-Windows.zip

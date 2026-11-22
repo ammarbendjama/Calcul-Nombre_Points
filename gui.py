@@ -19,7 +19,7 @@ import cv2
 from PIL import Image, ImageTk
 
 from app.aggregate import Copie, Zone, exporter_csv, exporter_json
-from app.extractor import iterer_pages_camera
+from app.extractor import DetecteurPages
 from app.pipeline import SessionOcr, analyser_page, analyser_video
 
 EXTENSIONS = [
@@ -67,6 +67,7 @@ class Application(tk.Tk):
         self.copie_courante: Copie | None = None
         self.copies_fermees: list[Copie] = []
         self.prochaine_numero = 1
+        self.capture_demandee = False
 
         cadre = ttk.Frame(self, padding=12)
         cadre.pack(fill=tk.BOTH, expand=True)
@@ -84,6 +85,8 @@ class Application(tk.Tk):
         self.btn_camera.pack(side=tk.LEFT)
         self.btn_arret = ttk.Button(boutons, text="⏹ Arrêter", command=self.arreter_camera, state=tk.DISABLED)
         self.btn_arret.pack(side=tk.LEFT, padx=6)
+        self.btn_capturer = ttk.Button(boutons, text="📸 Capturer la page", command=self.demander_capture, state=tk.DISABLED)
+        self.btn_capturer.pack(side=tk.LEFT, padx=6)
         self.btn_nouvelle = ttk.Button(boutons, text="➕ Nouvelle copie", command=self.nouvelle_copie, state=tk.DISABLED)
         self.btn_nouvelle.pack(side=tk.LEFT)
         self.btn_video = ttk.Button(boutons, text="🎞️ Fichier vidéo…", command=self.choisir_video)
@@ -127,44 +130,63 @@ class Application(tk.Tk):
         self.btn_video.configure(state=tk.DISABLED)
         self.btn_arret.configure(state=tk.NORMAL)
         self.btn_nouvelle.configure(state=tk.NORMAL)
+        self.btn_capturer.configure(state=tk.NORMAL)
         threading.Thread(target=self._flux_camera, daemon=True).start()
 
     def arreter_camera(self) -> None:
         self.stop_event.set()
 
     def _flux_camera(self) -> None:
-        try:
-            self.cap_camera, pages = iterer_pages_camera(
-                0, stop_event=self.stop_event, sur_frame=self._afficher_apercu_differe
-            )
-        except RuntimeError as erreur:
-            self.after(0, self._echec, str(erreur))
+        cap = cv2.VideoCapture(0)
+        if not cap.isOpened():
+            self.after(0, self._echec, "Impossible d'accéder à la caméra.")
             return
-
+        detecteur = DetecteurPages(pas_echantillon=3)
         session = SessionOcr("rapidocr")
+        dossier = Path("resultats-camera") / "pages"
+        dossier.mkdir(parents=True, exist_ok=True)
+        journal = Path("resultats-camera") / "journal-ocr.txt"
         try:
-            for image, nouvelle in pages:
-                if nouvelle or self.copie_courante is None:
-                    self._fermer_copie()
-                    self.copie_courante = Copie(numero=self.prochaine_numero)
-                    self.prochaine_numero += 1
-                nb_pages = len(self.copie_courante.apercus) + 1
-                notes, annotation = analyser_page(image, session, 8, 0.5, False)
-                for zone_box, note in notes:
-                    self.copie_courante.zones.append(
-                        Zone(page=nb_pages, index_image=-1, boite=zone_box, note=note)
-                    )
-                self.copie_courante.apercus.append("")
-                chemin = Path("resultats-camera") / "pages" / f"copie{self.copie_courante.numero:03d}_page{nb_pages:02d}.png"
-                chemin.parent.mkdir(parents=True, exist_ok=True)
-                cv2.imwrite(str(chemin), annotation)
-                self.copie_courante.apercus[-1] = str(chemin)
-                self.after(0, self._page_traitee, len(notes), nouvelle)
+            while not self.stop_event.is_set():
+                ok, image = cap.read()
+                if not ok:
+                    break
+                self._afficher_apercu_differe(image)
+                capture_manuelle = self.capture_demandee
+                self.capture_demandee = False
+                evenement = detecteur.traiter(image)
+                if evenement is not None:
+                    self._page_capturee(image, evenement[1], session, dossier, journal)
+                elif capture_manuelle:
+                    self._page_capturee(image, False, session, dossier, journal, manuelle=True)
         finally:
-            if self.cap_camera is not None:
-                self.cap_camera.release()
-                self.cap_camera = None
+            if cap is not None:
+                cap.release()
             self.after(0, self._fin_flux)
+
+    def _page_capturee(self, image, nouvelle: bool, session, dossier, journal, manuelle=False) -> None:
+        if nouvelle or self.copie_courante is None:
+            self._fermer_copie()
+            self.copie_courante = Copie(numero=self.prochaine_numero)
+            self.prochaine_numero += 1
+        nb_pages = len(self.copie_courante.apercus) + 1
+        notes, annotation = analyser_page(image, session, 8, 0.5, False)
+        for zone_box, note in notes:
+            self.copie_courante.zones.append(
+                Zone(page=nb_pages, index_image=-1, boite=zone_box, note=note)
+            )
+        chemin = dossier / f"copie{self.copie_courante.numero:03d}_page{nb_pages:02d}.png"
+        cv2.imwrite(str(chemin), annotation)
+        self.copie_courante.apercus.append(str(chemin))
+        with journal.open("a", encoding="utf-8") as f:
+            prefixe = "[NOUVELLE COPIE] " if nouvelle else ("[manuelle] " if manuelle else "")
+            f.write(f"{prefixe}copie{self.copie_courante.numero}/page{nb_pages} : " +
+                    " | ".join(n.note.brut + " = " + str(n.note.points) for n in notes) + "\n")
+        self.after(0, self._page_traitee, len(notes), nouvelle, manuelle)
+
+    def demander_capture(self) -> None:
+        if self.en_cours:
+            self.capture_demandee = True
 
     def _afficher_apercu_differe(self, image) -> None:
         self._cadre_affiche += 1
@@ -180,8 +202,8 @@ class Application(tk.Tk):
             text="Caméra active — gardez la page immobile 1 s ; tournez la page ou écartez la copie pour la page suivante."
         )
 
-    def _page_traitee(self, nb_notes: int, nouvelle: bool) -> None:
-        prefixe = "[NOUVELLE COPIE] " if nouvelle else ""
+    def _page_traitee(self, nb_notes: int, nouvelle: bool, manuelle: bool = False) -> None:
+        prefixe = "[NOUVELLE COPIE] " if nouvelle else ("[capture] " if manuelle else "")
         print(f"{prefixe}page analysée : {nb_notes} note(s)")
         self._rafraichir_tableau()
 
@@ -272,6 +294,7 @@ class Application(tk.Tk):
         self.btn_video.configure(state=tk.NORMAL)
         self.btn_arret.configure(state=tk.DISABLED)
         self.btn_nouvelle.configure(state=tk.DISABLED)
+        self.btn_capturer.configure(state=tk.DISABLED)
         self.label_etat.configure(text="Caméra arrêtée — résultats dans resultats-camera\\")
         print("Résultats de la caméra écrits dans : resultats-camera/")
 
@@ -286,7 +309,23 @@ class Application(tk.Tk):
                 os.system(f'xdg-open "{dossier}" >/dev/null 2>&1 &')
 
 
+def _test_ocr() -> int:
+    """Auto-test : l'exe se vérifie lui-même (utilisé par la CI)."""
+    import numpy as np
+
+    image = np.full((180, 640, 3), 245, dtype=np.uint8)
+    cv2.putText(image, "1,5/2", (40, 110), cv2.FONT_HERSHEY_SIMPLEX, 1.8, (0, 0, 200), 3)
+    notes, _ = analyser_page(image, SessionOcr("rapidocr"), 8, 0.5, False)
+    if any(n.points == 1.5 for _boite, n in notes):
+        print("TEST OCR : OK")
+        return 0
+    print("TEST OCR : ECHEC -> notes =", [(n.points, n.brut) for _b, n in notes])
+    return 1
+
+
 def main() -> int:
+    if "--test-ocr" in sys.argv:
+        return _test_ocr()
     app = Application()
     sys.stdout = JournalTk(app, app.journal)  # type: ignore[assignment]
     sys.stderr = JournalTk(app, app.journal)  # type: ignore[assignment]
