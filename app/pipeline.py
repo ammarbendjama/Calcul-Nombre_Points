@@ -11,7 +11,8 @@ import cv2
 from .aggregate import Copie, Zone, exporter_csv, exporter_json
 from .detector import preparer_ocr, trouver_zones_notes
 from .extractor import grouper_copies, iterer_pages
-from .ocr import lire_note
+from .ocr import lire_note, ocr_zone
+from .recognizer import notes_du_texte
 
 
 class SessionOcr:
@@ -37,7 +38,11 @@ class SessionOcr:
 
 def analyser_page(image, session: SessionOcr, marge: int, confiance_min: float,
                   accepter_entiers: bool):
-    """Analyse une page : retourne ([(boite, note)], image_annotée)."""
+    """Analyse une page : retourne ([(boite|None, note)], image_annotée).
+
+    boite vaut None quand la note vient de l'analyse de la page entière
+    (filet de sécurité quand la détection de zones n'a rien donné).
+    """
     annotation = image.copy()
     resultat = []
     for zone_box in trouver_zones_notes(image):
@@ -56,6 +61,13 @@ def analyser_page(image, session: SessionOcr, marge: int, confiance_min: float,
             (0, 0, 255),
             2,
         )
+
+    if not resultat:
+        page_complete = preparer_ocr(image, None, marge_px=0)
+        texte = ocr_zone(page_complete, moteur=session.moteur) if page_complete is not None else None
+        for note in notes_du_texte(texte or ""):
+            if note.confiance >= confiance_min * 0.8:
+                resultat.append((None, note))
     return resultat, annotation
 
 

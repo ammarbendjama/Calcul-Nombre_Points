@@ -16,7 +16,10 @@ from app.recognizer import analyser_note
         ("2,5/3", 2.5),
         ("1,5", 1.5),
         ("0.5", 0.5),
-        ("-  2,50 / 3", None),
+        ("-  2,50 / 3", 2.5),
+        ("15/2", 1.5),
+        ("25/3", 2.5),
+        ("05/1", 0.5),
     ],
 )
 def test_formes_reconnues(texte, attendu):
@@ -39,9 +42,18 @@ def test_entiers_acceptes_si_option():
     assert note.points == 3.0
 
 
-@pytest.mark.parametrize("texte", ["", "abc", "/2", "2.5.5", "1/,", "abc1,5/2def"])
+@pytest.mark.parametrize("texte", ["", "abc", "/2", "2.5.5", "1/,", "5/2", "abc1,5/2def"])
 def test_formes_invalides(texte):
     assert analyser_note(texte) is None
+
+
+def test_notes_du_texte_page_complete():
+    from app.recognizer import notes_du_texte
+
+    notes = notes_du_texte("Q1 = 1,5/2  Q2 = 0,5/1  Q3 = 2,5/3")
+    assert [n.points for n in notes] == [1.5, 0.5, 2.5]
+    notes = notes_du_texte("note totale 12,5 sur 20")
+    assert len(notes) == 1 and notes[0].points == 12.5
 
 
 def test_incoherences_rejetees():

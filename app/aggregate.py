@@ -14,7 +14,7 @@ from .recognizer import NoteLue
 class Zone:
     page: int
     index_image: int
-    boite: tuple[int, int, int, int]
+    boite: tuple[int, int, int, int] | None
     note: NoteLue
     apercu: str | None = None
 
@@ -68,7 +68,7 @@ def exporter_json(copies: list[Copie], chemin: Path) -> None:
                     {
                         "page": z.page,
                         "image_video": z.index_image,
-                        "boite": list(z.boite),
+                        "boite": list(z.boite) if z.boite else None,
                         "points": z.note.points,
                         "bareme": z.note.bareme,
                         "texte_lu": z.note.brut,
