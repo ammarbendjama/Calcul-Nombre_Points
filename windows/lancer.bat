@@ -1,5 +1,5 @@
 @echo off
-rem L"'Nombre de points de la copie" sous Windows, sans compilation.
+rem "Nombre de points de la copie" sous Windows, sans compilation.
 rem Premier lancement : installe l'environnement Python automatiquement.
 setlocal
 cd /d "%~dp0.."
@@ -18,7 +18,7 @@ if not exist ".venv\Scripts\python.exe" (
     ".venv\Scripts\python.exe" -m pip install --upgrade pip >nul
     ".venv\Scripts\python.exe" -m pip install -r requirements.txt
     if errorlevel 1 (
-        echo [ERREUR] Installation imposible. Verifiez votre connexion internet.
+        echo [ERREUR] Installation impossible. Verifiez votre connexion internet.
         pause
         exit /b 1
     )
