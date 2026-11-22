@@ -38,9 +38,16 @@
     <p class="aide">Photographiez chaque page de la copie (ou choisissez une vidéo de la
     copie). L'application lit les notes manuscrites (ex. <b>1,5/2</b>) et calcule le total.</p>
     <input type="file" id="fichier" accept="image/*,video/*" capture="environment" multiple hidden>
-    <button class="bouton" id="btn-nouvelle">📷 Nouvelle copie</button>
+    <button class="bouton" id="btn-camera">🎥 Caméra</button>
+    <button class="bouton second" id="btn-capture">📸 Capturer</button>
+    <button class="bouton" id="btn-nouvelle">➕ Nouvelle copie</button>
     <button class="bouton second" id="btn-csv" disabled>⬇️ Exporter CSV</button>
     <div class="progression" id="progression"><div></div></div>
+  </div>
+
+  <div class="carte" id="carte-camera" hidden>
+    <video id="video" autoplay playsinline muted class="apercu"></video>
+    <p class="aide" id="etat-camera">Caméra active — page immobile = capture automatique, ou appuyez sur 📸 Capturer.</p>
   </div>
 
   <div class="carte">

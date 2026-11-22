@@ -12,6 +12,16 @@ const elResume = document.getElementById("resume");
 const elProgress = document.getElementById("progression");
 const elBtnCsv = document.getElementById("btn-csv");
 const elBouton = document.getElementById("btn-nouvelle");
+const elBtnCamera = document.getElementById("btn-camera");
+const elBtnCapture = document.getElementById("btn-capture");
+const elCarteCamera = document.getElementById("carte-camera");
+const elVideo = document.getElementById("video");
+const elEtatCamera = document.getElementById("etat-camera");
+
+let fluxCamera = null;
+let minuterieCapture = null;
+let empreintePrecedente = null;
+let stabilite = 0;
 
 function formater(n) {
   return n.toLocaleString("fr-FR", { maximumFractionDigits: 2 });
@@ -126,13 +136,76 @@ async function pagesDeLaVideo(url, progression) {
 }
 
 elBouton.addEventListener("click", () => {
+  fermerCopie();
+  majAffichage();
+  elFichier.click();
+});
+
+function fermerCopie() {
   if (notesCopie.length) {
     copiesFermees.push(notesCopie.reduce((a, n) => a + (n.points || 0), 0));
   }
   notesCopie = [];
-  majAffichage();
-  elFichier.click();
+}
+
+elBtnCamera.addEventListener("click", async () => {
+  if (fluxCamera) { stopperCamera(); return; }
+  try {
+    fluxCamera = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "environment", width: { ideal: 1280 } }
+    });
+    elVideo.srcObject = fluxCamera;
+    elCarteCamera.hidden = false;
+    elBtnCamera.textContent = "⏹ Arrêter caméra";
+    debuterCaptureAuto();
+  } catch (err) {
+    alert("Caméra indisponible : " + err.message + "\n(utilisez ➕ Nouvelle copie → photo)");
+  }
 });
+
+function stopperCamera() {
+  if (fluxCamera) { fluxCamera.getTracks().forEach(t => t.stop()); fluxCamera = null; }
+  clearInterval(minuterieCapture);
+  minuterieCapture = null;
+  stabilite = 0;
+  empreintePrecedente = null;
+  elCarteCamera.hidden = true;
+  elBtnCamera.textContent = "🎥 Caméra";
+}
+
+function empreinteCanvas(canvas) {
+  const c = document.createElement("canvas");
+  c.width = 48; c.height = 64;
+  c.getContext("2d").drawImage(canvas, 0, 0, 48, 64);
+  const data = c.getContext("2d").getImageData(0, 0, 48, 64).data;
+  let somme = 0;
+  for (let i = 0; i < data.length; i += 16) somme += data[i];
+  return somme;
+}
+
+function debuterCaptureAuto() {
+  minuterieCapture = setInterval(async () => {
+    if (fluxCamera === null || elVideo.readyState < 2) return;
+    const e = empreinteCanvas(elVideo);
+    stabilite = (e === empreintePrecedente) ? stabilite + 1 : 0;
+    empreintePrecedente = e;
+    if (stabilite === 6) {
+      stabilite = -9999;
+      await capturerPage("Pages");
+    }
+  }, 300);
+}
+
+elBtnCapture.addEventListener("click", async () => {
+  if (fluxCamera) { stabilite = -9999; await capturerPage("📸 Capture"); }
+});
+
+async function capturerPage(etiquette) {
+  if (fluxCamera === null || elVideo.readyState < 2) return;
+  const c = canvasReduit(elVideo, elVideo.videoWidth, elVideo.videoHeight,
+    (ctx, canevas) => ctx.drawImage(elVideo, 0, 0, canevas.width, canevas.height));
+  await traiterImage(c, etiquette);
+}
 
 elBtnCsv.addEventListener("click", () => {
   const lignes = ["copie;points"];

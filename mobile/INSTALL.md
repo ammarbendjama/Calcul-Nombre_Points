@@ -35,8 +35,10 @@ présent à la racine de la branche publiée.
 
 ## 4. Utilisation
 
-1. **📷 Nouvelle copie** : photographiez la page, ou choisissez une vidéo
-   de la copie (une image est extraite toutes les 1,5 s).
+1. **🎥 Caméra** : ouvre la caméra en direct — gardez la page immobile
+   ~2 s, la capture est automatique (ou **📸 Capturer** manuellement).
+   Autres options : **📷 Nouvelle copie** (photo), ou fichier vidéo
+   (une image extraite toutes les 1,5 s).
 2. Les notes reconnues s'ajoutent à la copie en cours, avec le total.
 3. Copie suivante : appuyez à nouveau sur **📷 Nouvelle copie** — le total
    de la copie finie est archivé dans « Copies comptées ».

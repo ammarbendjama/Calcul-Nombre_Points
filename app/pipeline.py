@@ -14,6 +14,51 @@ from .extractor import grouper_copies, iterer_pages
 from .ocr import lire_note
 
 
+class SessionOcr:
+    """Session d'analyse : gère le moteur OCR et n'avertit qu'une seule fois."""
+
+    def __init__(self, moteur: str):
+        self.moteur = moteur
+        self.avertie = False
+
+    def lire(self, image, zone_box, marge: int, confiance_min: float, accepter_entiers: bool):
+        try:
+            morceau = preparer_ocr(image, zone_box, marge_px=marge)
+            note = lire_note(morceau, accepter_entiers=accepter_entiers, moteur=self.moteur)
+        except RuntimeError as erreur:
+            if not self.avertie:
+                print(f"ATTENTION : {erreur}", file=sys.stderr)
+                self.avertie = True
+            return None
+        if note is None or note.confiance < confiance_min:
+            return None
+        return note
+
+
+def analyser_page(image, session: SessionOcr, marge: int, confiance_min: float,
+                  accepter_entiers: bool):
+    """Analyse une page : retourne ([(boite, note)], image_annotée)."""
+    annotation = image.copy()
+    resultat = []
+    for zone_box in trouver_zones_notes(image):
+        note = session.lire(image, zone_box, marge, confiance_min, accepter_entiers)
+        if note is None:
+            continue
+        resultat.append((zone_box, note))
+        x, y, l, h = zone_box
+        cv2.rectangle(annotation, (x, y), (x + l, y + h), (0, 0, 255), 3)
+        cv2.putText(
+            annotation,
+            f"{note.points:g} pts",
+            (x, max(20, y - 8)),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.8,
+            (0, 0, 255),
+            2,
+        )
+    return resultat, annotation
+
+
 def analyser_video(args: argparse.Namespace) -> list[Copie]:
     pages: list[tuple[int, object, bool]] = []
     for index, image, nouvelle_copie in iterer_pages(
@@ -42,42 +87,23 @@ def analyser_video(args: argparse.Namespace) -> list[Copie]:
     dossier_pages = sortie / "pages"
     dossier_pages.mkdir(parents=True, exist_ok=True)
 
-    moteur_ok = True
     copies: list[Copie] = []
+    session = SessionOcr(args.moteur)
     for numero, indices in enumerate(groupes, start=1):
         copie = Copie(numero=numero)
         for ordre, idx in enumerate(indices, start=1):
             index_image, image, _nouvelle = pages[idx]
-            annotation = image.copy()
-            notes_page = 0
-            for zone_box in trouver_zones_notes(image):
-                morceau = preparer_ocr(image, zone_box, marge_px=args.marge)
-                try:
-                    note = lire_note(morceau, accepter_entiers=args.accepter_entiers, moteur=args.moteur)
-                except RuntimeError as erreur:
-                    if moteur_ok:
-                        print(f"ATTENTION : {erreur}", file=sys.stderr)
-                        moteur_ok = False
-                    continue
-                if note is None or note.confiance < args.confiance_min:
-                    continue
+            notes_trouvees, annotation = analyser_page(
+                image, session, args.marge, args.confiance_min, args.accepter_entiers
+            )
+            for zone_box, note in notes_trouvees:
                 copie.zones.append(Zone(page=ordre, index_image=index_image, boite=zone_box, note=note))
-                notes_page += 1
-                x, y, l, h = zone_box
-                cv2.rectangle(annotation, (x, y), (x + l, y + h), (0, 0, 255), 3)
-                cv2.putText(
-                    annotation,
-                    f"{note.points:g} pts",
-                    (x, max(20, y - 8)),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.8,
-                    (0, 0, 255),
-                    2,
-                )
-            copie.apercus.append(str(dossier_pages / f"copie{numero:03d}_page{ordre:02d}.png"))
-            cv2.imwrite(copie.apercus[-1], annotation)
-            print(f"  copie {numero} page {ordre} : {notes_page} note(s)")
+            chemin = dossier_pages / f"copie{numero:03d}_page{ordre:02d}.png"
+            copie.apercus.append(str(chemin))
+            cv2.imwrite(str(chemin), annotation)
+            print(f"  copie {numero} page {ordre} : {len(notes_trouvees)} note(s)")
         copies.append(copie)
+    return copies
     return copies
 
 
